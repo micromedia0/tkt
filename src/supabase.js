@@ -49,16 +49,17 @@ async function createPublicTicket({ deskId, categoryId, name, email, message }) 
   return ticket;
 }
 
-async function signInAdmin(email, password) {
-  const response = await fetch(`${config.url}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ email, password })
+async function requestEmailLink(email, intent = 'customer') {
+  localStorage.setItem('inbox24-auth-intent', intent);
+  const redirectTo = `${location.origin}${location.pathname}`;
+  const response = await fetch(`${config.url}/auth/v1/otp`, {
+    method: 'POST', headers,
+    body: JSON.stringify({ email: String(email).trim().toLowerCase(), create_user: true, options: { emailRedirectTo: redirectTo } })
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error_description || data.msg || 'Email o contraseña incorrectos.');
-  return data;
+  if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.msg || data.message || 'No pudimos enviar el enlace de acceso.'); }
 }
+
+async function requestAdminEmailLink(email) { return requestEmailLink(email, 'admin'); }
 
 async function signInCustomer(email, password) {
   const response = await fetch(`${config.url}/auth/v1/token?grant_type=password`, {
@@ -90,31 +91,37 @@ async function updateCustomerPassword(password) {
   if (!response.ok) throw new Error('No pudimos actualizar la contraseña.');
 }
 
-async function requestCustomerEmailLink(email) {
-  const response = await fetch(`${config.url}/auth/v1/otp`, {
-    method: 'POST', headers,
-    body: JSON.stringify({ email, create_user: true })
-  });
-  if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.msg || data.message || 'No pudimos enviar el enlace de acceso.'); }
-}
+async function requestCustomerEmailLink(email) { return requestEmailLink(email, 'customer'); }
 
 function startCustomerGoogleLogin() {
+  localStorage.setItem('inbox24-auth-intent', 'customer');
   const redirectTo = `${location.origin}${location.pathname}#/`;
+  location.href = `${config.url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
+}
+
+function startAdminGoogleLogin() {
+  localStorage.setItem('inbox24-auth-intent', 'admin');
+  const redirectTo = `${location.origin}${location.pathname}#/login`;
   location.href = `${config.url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
 }
 
 function restoreCustomerSession() {
   const hash = location.hash;
   const queryParams = new URLSearchParams(location.search);
-  const params = hash.includes('access_token=') ? new URLSearchParams(hash.slice(1)) : queryParams;
+  const params = hash.includes('access_token=') ? new URLSearchParams(hash.slice(hash.indexOf('access_token='))) : queryParams;
   if (!hash.includes('access_token=') && params.get('type') !== 'recovery') return;
   const accessToken = params.get('access_token');
   const refreshToken = params.get('refresh_token');
   let email = params.get('user_email') || '';
   try { if (!email && accessToken) email = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || ''; } catch (_) {}
   if (accessToken) localStorage.setItem('inbox24-customer-session', JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, user: { email } }));
-  const destination = params.get('type') === 'recovery' ? '#/recuperar' : '#/';
-  if (accessToken) history.replaceState(null, '', `${location.pathname}${destination}`);
+  const intent = localStorage.getItem('inbox24-auth-intent') || 'customer';
+  const destination = params.get('type') === 'recovery' ? '#/recuperar' : intent === 'admin' ? '#/inbox' : '#/';
+  if (accessToken) {
+    localStorage.setItem(intent === 'admin' ? 'inbox24-session' : 'inbox24-customer-session', JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, user: { email } }));
+    localStorage.removeItem('inbox24-auth-intent');
+    history.replaceState(null, '', `${location.pathname}${destination}`);
+  }
   else if (destination === '#/recuperar') location.hash = destination;
 }
 
@@ -368,5 +375,5 @@ async function createOrganizationDesk({ company, adminEmail, adminPassword, desk
   return { organization, desk, category };
 }
 
-window.INBOX24_SUPABASE = { listPublicDesks, getPublicDesk, createPublicTicket, createOrganizationDesk, signInAdmin, signInCustomer, signUpCustomer, requestCustomerPasswordReset, updateCustomerPassword, requestCustomerEmailLink, startCustomerGoogleLogin, restoreCustomerSession, listCustomerTickets, requestPasswordReset, listAdminTickets, updateAdminTicket, createAdminMessage, getAdminDesk, listAdminCategories, createAdminCategory, updateAdminCategory, listAdminForms, createAdminForm, getAdminForm, listAdminAgents, listAdminAreas, createAdminArea, listAdminAgentAreas, updateAgentAreas, updateAdminDesk, deleteAdminDesk };
+window.INBOX24_SUPABASE = { listPublicDesks, getPublicDesk, createPublicTicket, createOrganizationDesk, requestAdminEmailLink, signInCustomer, signUpCustomer, requestCustomerPasswordReset, updateCustomerPassword, requestCustomerEmailLink, startCustomerGoogleLogin, startAdminGoogleLogin, restoreCustomerSession, listCustomerTickets, requestPasswordReset, listAdminTickets, updateAdminTicket, createAdminMessage, getAdminDesk, listAdminCategories, createAdminCategory, updateAdminCategory, listAdminForms, createAdminForm, getAdminForm, listAdminAgents, listAdminAreas, createAdminArea, listAdminAgentAreas, updateAgentAreas, updateAdminDesk, deleteAdminDesk };
 restoreCustomerSession();

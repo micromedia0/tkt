@@ -5,7 +5,7 @@
   function showLogin(desk, continueWith) {
     const modal = document.createElement('div');
     modal.className = 'customer-modal';
-    modal.innerHTML = '<div class="customer-modal-card"><button class="customer-modal-close" type="button">×</button><span class="eyebrow">Tu cuenta</span><h2>Ingresá para continuar</h2><p class="muted">Usá tu email y contraseña para guardar tus tickets.</p><form><label>Email<input class="input" name="email" type="email" required autocomplete="email" placeholder="tu@email.com"></label><label>Contraseña<input class="input" name="password" type="password" required minlength="8" autocomplete="current-password"></label><button class="button">Ingresar</button><p class="customer-login-error muted"></p></form><button class="customer-signup customer-link" type="button">Crear cuenta y enviar validación</button><button class="customer-forgot customer-link" type="button">Olvidé mi contraseña</button><button class="customer-google" type="button">◯ Continuar con Google</button></div>';
+    modal.innerHTML = '<div class="customer-modal-card"><button class="customer-modal-close" type="button">×</button><span class="eyebrow">Tu cuenta</span><h2>Iniciar sesión o registrarse</h2><p class="muted">Accedé a tus tickets sin contraseñas.</p><button class="button login-google customer-google" type="button">🌈 Continuar con Google</button><div class="login-divider"><span>o</span></div><form><label>Dirección de correo electrónico<input class="input" name="email" type="email" required autocomplete="email" placeholder="tu@email.com"></label><button class="button">Continuar</button><p class="customer-login-error muted"></p></form><button class="customer-signup" hidden></button><button class="customer-forgot" hidden></button></div>';
     document.body.appendChild(modal);
     modal.querySelector('.customer-modal-close').onclick = () => { modal.remove(); location.hash = '#/mesa/' + desk.id; };
     modal.querySelector('form').onsubmit = async event => {
@@ -13,16 +13,16 @@
       const form = new FormData(event.target);
       const button = event.target.querySelector('button');
       const error = modal.querySelector('.customer-login-error');
-      button.disabled = true; button.textContent = 'Ingresando...';
+      button.disabled = true; button.textContent = 'Enviando enlace...';
       try {
         const email = String(form.get('email')).trim().toLowerCase();
-        const password = String(form.get('password'));
-        const data = await window.INBOX24_SUPABASE.signInCustomer(email, password);
-        localStorage.setItem('inbox24-customer-session', JSON.stringify(data));
-        modal.remove(); continueWith(email);
+        sessionStorage.setItem('inbox24-customer-return', location.hash);
+        await window.INBOX24_SUPABASE.requestCustomerEmailLink(email);
+        error.textContent = 'Revisá tu correo. Te enviamos un enlace para continuar.';
+        event.target.reset();
       } catch (err) {
         error.textContent = err.message || 'No pudimos iniciar sesión.';
-        button.disabled = false; button.textContent = 'Ingresar';
+        button.disabled = false; button.textContent = 'Continuar';
       }
     };
     modal.querySelector('.customer-signup').onclick = async () => { const email = modal.querySelector('[name=email]').value.trim().toLowerCase(); const password = modal.querySelector('[name=password]').value; const error = modal.querySelector('.customer-login-error'); if (!email || password.length < 8) { error.textContent = 'Ingresá un email y una contraseña de al menos 8 caracteres.'; return; } try { await window.INBOX24_SUPABASE.signUpCustomer(email, password); error.textContent = 'Te enviamos un correo para validar la cuenta. Después podrás ingresar con tu contraseña.'; } catch (err) { error.textContent = err.message || 'No pudimos crear la cuenta.'; } };
