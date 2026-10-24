@@ -115,6 +115,23 @@ function startAdminGoogleLogin() {
   location.href = `${config.url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
 }
 
+function confirmSignOut(kind = 'customer') {
+  const key = kind === 'admin' ? 'inbox24-session' : 'inbox24-customer-session';
+  const session = JSON.parse(localStorage.getItem(key) || 'null');
+  const email = session?.user?.email || '';
+  const name = email ? email.split('@')[0] : kind === 'admin' ? 'Administrador' : 'Usuario';
+  return new Promise(resolve => {
+    const modal = document.createElement('div');
+    modal.className = 'logout-modal';
+    modal.innerHTML = `<div class="logout-card" role="dialog" aria-modal="true" aria-labelledby="logout-title"><h2 id="logout-title">¿Cerrar sesión?</h2><div class="logout-account"><span class="logout-avatar">${name.slice(0, 2).toUpperCase()}</span><span><b>${name}</b><small>${email}</small></span></div><p class="muted">Tendrás que volver a iniciar sesión para acceder a ${kind === 'admin' ? 'tu backoffice' : 'tus tickets'}.</p><button class="button" data-confirm>Cerrar sesión</button><button class="button secondary" data-cancel>Cancelar</button></div>`;
+    document.body.appendChild(modal);
+    const close = confirmed => { modal.remove(); resolve(confirmed); };
+    modal.querySelector('[data-confirm]').onclick = () => { localStorage.removeItem(key); if (kind === 'admin') localStorage.removeItem('inbox24-admin-desk'); close(true); };
+    modal.querySelector('[data-cancel]').onclick = () => close(false);
+    modal.onclick = event => { if (event.target === modal) close(false); };
+  });
+}
+
 function restoreCustomerSession() {
   const hash = location.hash;
   const queryParams = new URLSearchParams(location.search);
@@ -385,5 +402,5 @@ async function createOrganizationDesk({ company, adminEmail, adminPassword, desk
   return { organization, desk, category };
 }
 
-window.INBOX24_SUPABASE = { listPublicDesks, getPublicDesk, createPublicTicket, createOrganizationDesk, requestAdminEmailLink, signInAdmin, signInCustomer, signUpCustomer, requestCustomerPasswordReset, updateCustomerPassword, requestCustomerEmailLink, startCustomerGoogleLogin, startAdminGoogleLogin, restoreCustomerSession, listCustomerTickets, requestPasswordReset, listAdminTickets, updateAdminTicket, createAdminMessage, getAdminDesk, listAdminCategories, createAdminCategory, updateAdminCategory, listAdminForms, createAdminForm, getAdminForm, listAdminAgents, listAdminAreas, createAdminArea, listAdminAgentAreas, updateAgentAreas, updateAdminDesk, deleteAdminDesk };
+window.INBOX24_SUPABASE = { listPublicDesks, getPublicDesk, createOrganizationDesk, requestAdminEmailLink, signInAdmin, signInCustomer, signUpCustomer, requestCustomerPasswordReset, updateCustomerPassword, requestCustomerEmailLink, startCustomerGoogleLogin, startAdminGoogleLogin, confirmSignOut, restoreCustomerSession, listCustomerTickets, requestPasswordReset, listAdminTickets, updateAdminTicket, createAdminMessage, getAdminDesk, listAdminCategories, createAdminCategory, updateAdminCategory, listAdminForms, createAdminForm, getAdminForm, listAdminAgents, listAdminAreas, createAdminArea, listAdminAgentAreas, updateAgentAreas, updateAdminDesk, deleteAdminDesk };
 restoreCustomerSession();

@@ -44,7 +44,7 @@
       return;
     }
     account.innerHTML = '<div class="history-user"><span class="history-avatar">' + esc(email[0].toUpperCase()) + '</span><span><b>' + esc(email.split('@')[0]) + '</b><small>' + esc(email) + '</small></span><button id="customer-logout" title="Cerrar sesión">↪</button></div>';
-    document.querySelector('#customer-logout').onclick = () => { localStorage.removeItem('inbox24-customer-session'); renderCustomerSidebar(); };
+    document.querySelector('#customer-logout').onclick = async () => { if (await window.INBOX24_SUPABASE.confirmSignOut('customer')) renderCustomerSidebar(); };
     try {
       const localRows = JSON.parse(localStorage.getItem('inbox24-customer-tickets') || '[]').filter(ticket => ticket.requester_email === email);
       const rows = [...localRows, ...(await window.INBOX24_SUPABASE.listCustomerTickets(email) || [])];
