@@ -71,6 +71,16 @@ async function signInCustomer(email, password) {
   return data;
 }
 
+async function signInAdmin(email, password) {
+  const response = await fetch(`${config.url}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers, body: JSON.stringify({ email, password })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error_description || data.msg || 'Email o contraseña incorrectos.');
+  localStorage.setItem('inbox24-session', JSON.stringify(data));
+  return data;
+}
+
 async function signUpCustomer(email, password) {
   const response = await fetch(`${config.url}/auth/v1/signup`, { method: 'POST', headers, body: JSON.stringify({ email, password }) });
   const data = await response.json().catch(() => ({}));
@@ -375,5 +385,5 @@ async function createOrganizationDesk({ company, adminEmail, adminPassword, desk
   return { organization, desk, category };
 }
 
-window.INBOX24_SUPABASE = { listPublicDesks, getPublicDesk, createPublicTicket, createOrganizationDesk, requestAdminEmailLink, signInCustomer, signUpCustomer, requestCustomerPasswordReset, updateCustomerPassword, requestCustomerEmailLink, startCustomerGoogleLogin, startAdminGoogleLogin, restoreCustomerSession, listCustomerTickets, requestPasswordReset, listAdminTickets, updateAdminTicket, createAdminMessage, getAdminDesk, listAdminCategories, createAdminCategory, updateAdminCategory, listAdminForms, createAdminForm, getAdminForm, listAdminAgents, listAdminAreas, createAdminArea, listAdminAgentAreas, updateAgentAreas, updateAdminDesk, deleteAdminDesk };
+window.INBOX24_SUPABASE = { listPublicDesks, getPublicDesk, createPublicTicket, createOrganizationDesk, requestAdminEmailLink, signInAdmin, signInCustomer, signUpCustomer, requestCustomerPasswordReset, updateCustomerPassword, requestCustomerEmailLink, startCustomerGoogleLogin, startAdminGoogleLogin, restoreCustomerSession, listCustomerTickets, requestPasswordReset, listAdminTickets, updateAdminTicket, createAdminMessage, getAdminDesk, listAdminCategories, createAdminCategory, updateAdminCategory, listAdminForms, createAdminForm, getAdminForm, listAdminAgents, listAdminAreas, createAdminArea, listAdminAgentAreas, updateAgentAreas, updateAdminDesk, deleteAdminDesk };
 restoreCustomerSession();
