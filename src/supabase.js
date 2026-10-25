@@ -12,6 +12,15 @@ const newId = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4x
   return v.toString(16);
 }));
 
+function getCustomerUserId() {
+  const session = JSON.parse(localStorage.getItem('inbox24-customer-session') || 'null');
+  if (session?.user?.id) return session.user.id;
+  try {
+    const payload = JSON.parse(atob(String(session?.access_token || '').split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.sub || null;
+  } catch (_) { return null; }
+}
+
 async function supabaseRequest(path, options = {}) {
   if (!config.url || !config.anonKey) throw new Error('Supabase no está configurado');
   const response = await fetch(`${config.url}/rest/v1/${path}`, {
@@ -33,6 +42,14 @@ async function getPublicDesk(id) {
 }
 
 async function createPublicTicket({ deskId, categoryId, name, email, requesterId, message }) {
+  requesterId = requesterId || getCustomerUserId();
+  if (requesterId) {
+    await supabaseRequest('users', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ id: requesterId, email: String(email).trim().toLowerCase(), name: name || null, active: true })
+    });
+  }
   const ticket = { id: newId(), public_number: `INB-${Date.now().toString().slice(-6)}`, desk_id: deskId, category_id: categoryId, requester_id: requesterId || null, requester_name: name, requester_email: email, status: 'NEW', priority: 'NORMAL' };
   await supabaseRequest('tickets', {
     method: 'POST',
@@ -154,7 +171,7 @@ function restoreCustomerSession() {
 
 async function listCustomerTickets(email) {
   const session = JSON.parse(localStorage.getItem('inbox24-customer-session') || 'null');
-  const requesterId = session?.user?.id;
+  const requesterId = getCustomerUserId();
   const select = 'id,public_number,status,created_at,desk_id,category_id,requester_id,desks(id,name,logo_url,organizations(name)),categories(name)';
   const byId = requesterId ? await supabaseRequest(`tickets?select=${select}&requester_id=eq.${encodeURIComponent(requesterId)}&order=created_at.desc`) : [];
   const byEmail = await supabaseRequest(`tickets?select=${select}&requester_email=eq.${encodeURIComponent(email)}&order=created_at.desc`);
@@ -191,7 +208,10 @@ async function listAdminTickets() {
     headers: { ...headers, Authorization: `Bearer ${session.access_token}` }
   });
   if (!response.ok) throw new Error(`No se pudieron cargar las solicitudes (${response.status}).`);
-  return response.json();
+  const agents = await response.json();
+  // Compatibilidad con la UI existente: el modelo nuevo usa agents.id,
+  // mientras algunas vistas todavía leen user_id/users.*.
+  return agents.map(agent => ({ ...agent, user_id: agent.id, users: { name: agent.name, email: agent.email } }));
 }
 
 async function updateAdminTicket(id, changes) {
@@ -214,15 +234,16 @@ async function getAdminDesk() {
   const userId = session?.user?.id;
   if (!session?.access_token || !userId) return null;
   const authHeaders = { ...headers, Authorization: `Bearer ${session.access_token}` };
-  const membershipsResponse = await fetch(`${config.url}/rest/v1/organization_members?select=organization_id&user_id=eq.${encodeURIComponent(userId)}&active=eq.true&limit=1`, { headers: authHeaders });
-  if (!membershipsResponse.ok) throw new Error(`No se pudo cargar la empresa (${membershipsResponse.status}).`);
-  const memberships = await membershipsResponse.json();
-  if (!memberships[0]?.organization_id) return null;
-  const desksResponse = await fetch(`${config.url}/rest/v1/desks?select=id,name,logo_url,cover_url,is_open,is_public&organization_id=eq.${encodeURIComponent(memberships[0].organization_id)}&limit=1`, { headers: authHeaders });
+  const agentResponse = await fetch(`${config.url}/rest/v1/agents?select=id,organization_id,name,email,role,active&auth_user_id=eq.${encodeURIComponent(userId)}&active=eq.true&limit=1`, { headers: authHeaders });
+  if (!agentResponse.ok) throw new Error(`No se pudo cargar el agente (${agentResponse.status}).`);
+  const agents = await agentResponse.json();
+  if (!agents[0]?.organization_id) return null;
+  const desksResponse = await fetch(`${config.url}/rest/v1/desks?select=id,name,logo_url,cover_url,is_open,is_public&organization_id=eq.${encodeURIComponent(agents[0].organization_id)}&limit=1`, { headers: authHeaders });
   if (!desksResponse.ok) throw new Error(`No se pudo cargar la mesa (${desksResponse.status}).`);
   const desk = (await desksResponse.json())[0] || null;
   if (!desk) return null;
-  desk.organization_id = memberships[0].organization_id;
+  desk.organization_id = agents[0].organization_id;
+  desk.agent_id = agents[0].id;
   const planResponse = await fetch(`${config.url}/rest/v1/plan_limits?select=plan_code,max_categories,max_agents&organization_id=eq.${encodeURIComponent(desk.organization_id)}&limit=1`, { headers: authHeaders });
   desk.plan = planResponse.ok ? (await planResponse.json())[0] || { plan_code: 'free', max_categories: 4, max_agents: 1 } : { plan_code: 'free', max_categories: 4, max_agents: 1 };
   return desk;
@@ -284,9 +305,10 @@ async function listAdminAgents() {
   const desk = JSON.parse(localStorage.getItem('inbox24-admin-desk') || 'null');
   const session = JSON.parse(localStorage.getItem('inbox24-session') || 'null');
   if (!desk?.organization_id || !session?.access_token) return [];
-  const response = await fetch(`${config.url}/rest/v1/organization_members?select=user_id,role,active,users(email,name)&organization_id=eq.${encodeURIComponent(desk.organization_id)}&order=created_at`, { headers: { ...headers, Authorization: `Bearer ${session.access_token}` } });
+  const response = await fetch(`${config.url}/rest/v1/agents?select=id,name,email,role,active&organization_id=eq.${encodeURIComponent(desk.organization_id)}&order=created_at`, { headers: { ...headers, Authorization: `Bearer ${session.access_token}` } });
   if (!response.ok) throw new Error(`No se pudieron cargar los agentes (${response.status}).`);
-  return response.json();
+  const agents = await response.json();
+  return agents.map(agent => ({ ...agent, user_id: agent.id, users: { name: agent.name, email: agent.email } }));
 }
 
 async function listAdminAreas() {
@@ -309,16 +331,17 @@ async function createAdminArea(name, color = '#2563eb') {
 async function listAdminAgentAreas() {
   const desk = JSON.parse(localStorage.getItem('inbox24-admin-desk') || 'null'); const session = JSON.parse(localStorage.getItem('inbox24-session') || 'null');
   if (!desk?.organization_id || !session?.access_token) return [];
-  const response = await fetch(`${config.url}/rest/v1/agent_areas?select=user_id,area_id&organization_id=eq.${encodeURIComponent(desk.organization_id)}`, { headers: { ...headers, Authorization: `Bearer ${session.access_token}` } });
-  if (!response.ok) throw new Error(`No se pudieron cargar las asignaciones (${response.status}).`); return response.json();
+  const response = await fetch(`${config.url}/rest/v1/agent_areas?select=agent_id,area_id,agents!inner(organization_id)&agents.organization_id=eq.${encodeURIComponent(desk.organization_id)}`, { headers: { ...headers, Authorization: `Bearer ${session.access_token}` } });
+  if (!response.ok) throw new Error(`No se pudieron cargar las asignaciones (${response.status}).`);
+  return (await response.json()).map(link => ({ ...link, user_id: link.agent_id }));
 }
 
-async function updateAgentAreas(userId, areaIds) {
+async function updateAgentAreas(agentId, areaIds) {
   const desk = JSON.parse(localStorage.getItem('inbox24-admin-desk') || 'null'); const session = JSON.parse(localStorage.getItem('inbox24-session') || 'null');
-  const base = `${config.url}/rest/v1/agent_areas?organization_id=eq.${encodeURIComponent(desk.organization_id)}&user_id=eq.${encodeURIComponent(userId)}`;
+  const base = `${config.url}/rest/v1/agent_areas?agent_id=eq.${encodeURIComponent(agentId)}`;
   const remove = await fetch(base, { method: 'DELETE', headers: { ...headers, Authorization: `Bearer ${session.access_token}` } }); if (!remove.ok) throw new Error(`No se pudieron actualizar las áreas (${remove.status}).`);
   if (!areaIds.length) return;
-  const response = await fetch(`${config.url}/rest/v1/agent_areas`, { method: 'POST', headers: { ...headers, Authorization: `Bearer ${session.access_token}`, Prefer: 'return=minimal' }, body: JSON.stringify(areaIds.map(area_id => ({ organization_id: desk.organization_id, user_id: userId, area_id }))) });
+  const response = await fetch(`${config.url}/rest/v1/agent_areas`, { method: 'POST', headers: { ...headers, Authorization: `Bearer ${session.access_token}`, Prefer: 'return=minimal' }, body: JSON.stringify(areaIds.map(area_id => ({ agent_id: agentId, area_id }))) });
   if (!response.ok) throw new Error(`No se pudieron asignar las áreas (${response.status}).`);
 }
 
@@ -376,15 +399,10 @@ async function createOrganizationDesk({ company, adminEmail, adminPassword, desk
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify(organization)
   });
-  await supabaseRequest('users', {
+  await supabaseRequest('agents', {
     method: 'POST',
     headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ id: adminId, email: adminEmail, name: company, active: true })
-  });
-  await supabaseRequest('organization_members', {
-    method: 'POST',
-    headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({ organization_id: organization.id, user_id: adminId, role: 'ADMIN', active: true })
+    body: JSON.stringify({ id: newId(), auth_user_id: adminId, organization_id: organization.id, email: adminEmail, name: company, role: 'superadmin', active: true })
   });
   const slug = `${deskName}-${Date.now()}`.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const desk = { id: newId(), organization_id: organization.id, name: deskName, slug, description, logo_url: logoUrl || null, cover_url: coverUrl || null, is_open: true, is_public: true };

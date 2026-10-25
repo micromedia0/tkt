@@ -49,7 +49,8 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members OrganizationMember[]
+  agents  Agent[]
+  areas   Area[]
   desks   Desk[]
   plan    PlanLimit?
 }
@@ -62,26 +63,55 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships OrganizationMember[]
   requested   Ticket[]             @relation("RequestedTickets")
-  assigned    Ticket[]             @relation("AssignedTickets")
   messages    Message[]
   events      TicketEvent[]
 }
 
-model OrganizationMember {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizationId String       @db.Uuid
-  userId         String       @db.Uuid
-  role           MemberRole
-  active         Boolean      @default(true)
-  createdAt      DateTime     @default(now())
+model Agent {
+  id             String   @id @default(uuid()) @db.Uuid
+  authUserId     String?  @unique @map("auth_user_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  email          String
+  role           MemberRole @default(AGENT)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  areas        AgentArea[]
+  assigned     Ticket[] @relation("AssignedTickets")
 
-  @@unique([organizationId, userId])
-  @@index([userId])
+  @@index([organizationId, active])
+}
+
+model Area {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  description    String?
+  color          String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agents       AgentArea[]
+
+  @@unique([organizationId, name])
+}
+
+model AgentArea {
+  agentId   String   @map("agent_id") @db.Uuid
+  areaId    String   @map("area_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  area  Area  @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, areaId])
+  @@index([areaId])
 }
 
 model Desk {
@@ -157,7 +187,7 @@ model Ticket {
   deskId       String         @db.Uuid
   categoryId   String         @db.Uuid
   requesterId  String?        @db.Uuid
-  assignedToId String?        @db.Uuid
+  assignedToId String?        @map("assigned_to_id") @db.Uuid
   requesterName  String?
   requesterEmail String?
   status       TicketStatus   @default(NEW)
@@ -170,7 +200,7 @@ model Ticket {
   desk        Desk              @relation(fields: [deskId], references: [id])
   category    Category          @relation(fields: [categoryId], references: [id])
   requester   User?             @relation("RequestedTickets", fields: [requesterId], references: [id])
-  assignedTo  User?             @relation("AssignedTickets", fields: [assignedToId], references: [id])
+  assignedTo  Agent?            @relation("AssignedTickets", fields: [assignedToId], references: [id])
   fieldValues TicketFieldValue[]
   messages    Message[]
   attachments Attachment[]
