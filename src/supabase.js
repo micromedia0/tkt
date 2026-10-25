@@ -32,8 +32,8 @@ async function getPublicDesk(id) {
   return rows[0] || null;
 }
 
-async function createPublicTicket({ deskId, categoryId, name, email, message }) {
-  const ticket = { id: newId(), public_number: `INB-${Date.now().toString().slice(-6)}`, desk_id: deskId, category_id: categoryId, requester_name: name, requester_email: email, status: 'NEW', priority: 'NORMAL' };
+async function createPublicTicket({ deskId, categoryId, name, email, requesterId, message }) {
+  const ticket = { id: newId(), public_number: `INB-${Date.now().toString().slice(-6)}`, desk_id: deskId, category_id: categoryId, requester_id: requesterId || null, requester_name: name, requester_email: email, status: 'NEW', priority: 'NORMAL' };
   await supabaseRequest('tickets', {
     method: 'POST',
     headers: { Prefer: 'return=minimal' },
@@ -153,8 +153,13 @@ function restoreCustomerSession() {
 }
 
 async function listCustomerTickets(email) {
-  const query = `tickets?select=id,public_number,status,created_at,desk_id,category_id,desks(id,name,logo_url),categories(name)&requester_email=eq.${encodeURIComponent(email)}&order=created_at.desc`;
-  return supabaseRequest(query);
+  const session = JSON.parse(localStorage.getItem('inbox24-customer-session') || 'null');
+  const requesterId = session?.user?.id;
+  const select = 'id,public_number,status,created_at,desk_id,category_id,requester_id,desks(id,name,logo_url,organizations(name)),categories(name)';
+  const byId = requesterId ? await supabaseRequest(`tickets?select=${select}&requester_id=eq.${encodeURIComponent(requesterId)}&order=created_at.desc`) : [];
+  const byEmail = await supabaseRequest(`tickets?select=${select}&requester_email=eq.${encodeURIComponent(email)}&order=created_at.desc`);
+  const rows = [...byId, ...byEmail];
+  return [...new Map(rows.map(row => [row.id, row])).values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
 async function refreshAdminSession(session) {

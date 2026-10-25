@@ -63,6 +63,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   memberships OrganizationMember[]
+  requested   Ticket[]             @relation("RequestedTickets")
   assigned    Ticket[]             @relation("AssignedTickets")
   messages    Message[]
   events      TicketEvent[]
@@ -155,6 +156,7 @@ model Ticket {
   publicNumber String         @unique
   deskId       String         @db.Uuid
   categoryId   String         @db.Uuid
+  requesterId  String?        @db.Uuid
   assignedToId String?        @db.Uuid
   requesterName  String?
   requesterEmail String?
@@ -167,6 +169,7 @@ model Ticket {
 
   desk        Desk              @relation(fields: [deskId], references: [id])
   category    Category          @relation(fields: [categoryId], references: [id])
+  requester   User?             @relation("RequestedTickets", fields: [requesterId], references: [id])
   assignedTo  User?             @relation("AssignedTickets", fields: [assignedToId], references: [id])
   fieldValues TicketFieldValue[]
   messages    Message[]

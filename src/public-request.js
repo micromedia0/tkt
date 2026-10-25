@@ -48,7 +48,8 @@
           const form = new FormData(event.target), button = event.target.querySelector('button'), message = document.querySelector('#request-message');
           button.disabled = true; button.textContent = 'Enviando...';
           try {
-            const ticket = await window.INBOX24_SUPABASE.createPublicTicket({ deskId: desk.id, categoryId: category.id, name: email, email, message: form.get('subject') + ': ' + form.get('message') });
+            const session = JSON.parse(localStorage.getItem('inbox24-customer-session') || 'null');
+            const ticket = await window.INBOX24_SUPABASE.createPublicTicket({ deskId: desk.id, categoryId: category.id, name: email, email, requesterId: session?.user?.id, message: form.get('subject') + ': ' + form.get('message') });
             const localTickets = JSON.parse(localStorage.getItem('inbox24-customer-tickets') || '[]');
             localTickets.unshift({ ...ticket, requester_email: email, status: 'NEW', desks: { id: desk.id, name: desk.name, logo_url: desk.logo_url || null }, categories: { name: category.name } });
             localStorage.setItem('inbox24-customer-tickets', JSON.stringify(localTickets.slice(0, 50)));
