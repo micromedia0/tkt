@@ -112,7 +112,9 @@ async function requestCustomerPasswordReset(email) {
 }
 
 async function updateCustomerPassword(password) {
-  const session = JSON.parse(localStorage.getItem('inbox24-customer-session') || 'null');
+  const adminSession = JSON.parse(localStorage.getItem('inbox24-session') || 'null');
+  const customerSession = JSON.parse(localStorage.getItem('inbox24-customer-session') || 'null');
+  const session = adminSession?.access_token ? adminSession : customerSession;
   if (!session?.access_token) throw new Error('El enlace de recuperación venció. Solicitá uno nuevo.');
   const response = await fetch(`${config.url}/auth/v1/user`, { method: 'PUT', headers: { ...headers, Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ password }) });
   if (!response.ok) throw new Error('No pudimos actualizar la contraseña.');
@@ -160,7 +162,7 @@ function restoreCustomerSession() {
   try { if (!email && accessToken) email = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email || ''; } catch (_) {}
   if (accessToken) localStorage.setItem('inbox24-customer-session', JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, user: { email } }));
   const intent = localStorage.getItem('inbox24-auth-intent') || 'customer';
-  const destination = params.get('type') === 'recovery' ? '#/recuperar' : intent === 'admin' ? '#/inbox' : '#/';
+  const destination = params.get('type') === 'recovery' ? (intent === 'admin' ? '#/recuperar-admin' : '#/recuperar') : intent === 'admin' ? '#/inbox' : '#/';
   if (accessToken) {
     localStorage.setItem(intent === 'admin' ? 'inbox24-session' : 'inbox24-customer-session', JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, user: { email } }));
     localStorage.removeItem('inbox24-auth-intent');
@@ -193,10 +195,11 @@ async function refreshAdminSession(session) {
 }
 
 async function requestPasswordReset(email) {
+  localStorage.setItem('inbox24-auth-intent', 'admin');
   const response = await fetch(`${config.url}/auth/v1/recover`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ email })
+    body: JSON.stringify({ email, redirect_to: `${location.origin}${location.pathname}#/recuperar-admin` })
   });
   if (!response.ok) throw new Error('No pudimos procesar la solicitud. Intentá nuevamente.');
 }
@@ -208,10 +211,7 @@ async function listAdminTickets() {
     headers: { ...headers, Authorization: `Bearer ${session.access_token}` }
   });
   if (!response.ok) throw new Error(`No se pudieron cargar las solicitudes (${response.status}).`);
-  const agents = await response.json();
-  // Compatibilidad con la UI existente: el modelo nuevo usa agents.id,
-  // mientras algunas vistas todavía leen user_id/users.*.
-  return agents.map(agent => ({ ...agent, user_id: agent.id, users: { name: agent.name, email: agent.email } }));
+  return response.json();
 }
 
 async function updateAdminTicket(id, changes) {
